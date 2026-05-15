@@ -22,6 +22,7 @@ import {
   type NovelAiDefaults,
 } from "@marinara-engine/shared";
 import { isImageLocalUrlsEnabled } from "../../config/runtime-config.js";
+import { generateRunPodComfyUI } from "./runpod-comfyui.service.js";
 import { normalizeLoopbackUrl, safeFetch, validateOutboundUrl } from "../../utils/security.js";
 
 const GALLERY_DIR = join(DATA_DIR, "gallery");
@@ -43,6 +44,8 @@ export interface ImageGenRequest {
   width?: number;
   height?: number;
   model?: string;
+  /** For endpoint-based image services (e.g. RunPod): the endpoint/instance ID. */
+  imageEndpointId?: string;
   /** Optional ComfyUI workflow JSON. Placeholders like %prompt%, %width%, %height%, %seed% will be replaced. */
   comfyWorkflow?: string;
   /** Optional connection-scoped defaults for local Stable Diffusion backends. */
@@ -78,6 +81,7 @@ const EXPLICIT_IMAGE_SOURCES = new Set([
   "xai",
   "comfyui",
   "automatic1111",
+  "runpod_comfyui",
   "gemini_image",
 ]);
 
@@ -143,6 +147,16 @@ export async function generateImage(
       return generateXAI(normalizedBaseUrl, apiKey, scopedRequest);
     case "comfyui":
       return generateComfyUI(normalizedBaseUrl, scopedRequest);
+    case "runpod_comfyui": {
+      const endpointId = scopedRequest.imageEndpointId || "";
+      if (!endpointId) {
+        throw new Error(
+          "RunPod ComfyUI requires an endpoint ID. " +
+          "Enter your RunPod endpoint ID in the Endpoint ID field (e.g. 'abc123def456').",
+        );
+      }
+      return generateRunPodComfyUI(normalizedBaseUrl, endpointId, apiKey, scopedRequest);
+    }
     case "automatic1111":
       return generateAutomatic1111(normalizedBaseUrl, scopedRequest);
     case "gemini_image":

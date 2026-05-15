@@ -730,6 +730,11 @@ const COLUMN_MIGRATIONS: ColumnMigration[] = [
     column: "sort_order",
     definition: "INTEGER NOT NULL DEFAULT 0",
   },
+  {
+    table: "api_connections",
+    column: "image_endpoint_id",
+    definition: "TEXT",
+  },
 ];
 
 /**

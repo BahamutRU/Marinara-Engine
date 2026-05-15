@@ -50,6 +50,8 @@ export interface APIConnection {
   comfyuiWorkflow: string | null;
   /** Explicitly selected image generation service ID (e.g. "comfyui", "automatic1111"). Overrides URL inference when set. */
   imageService: string | null;
+  /** For endpoint-based image services (e.g. RunPod Serverless): the endpoint ID sent alongside the base URL. */
+  imageEndpointId: string | null;
   /** Default generation parameters for new chats using this connection (JSON) */
   defaultParameters: string | null;
   /** Prompt preset to use instead of a chat's selected preset when this connection is active */

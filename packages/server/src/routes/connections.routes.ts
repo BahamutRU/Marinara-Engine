@@ -224,6 +224,14 @@ export async function connectionsRoutes(app: FastifyInstance) {
       } else if (conn.provider === "image_generation" && imageSource === "automatic1111") {
         // AUTOMATIC1111 / SD Web UI: ping the internal ping endpoint
         testUrl = `${baseUrl}/sdapi/v1/options`;
+      } else if (conn.provider === "image_generation" && imageSource === "runpod_comfyui") {
+        // RunPod: use Test Image to verify — no cheap endpoint test available
+        return {
+          success: true,
+          message: "RunPod endpoint configured. Use 'Test Image' to verify generation works.",
+          latencyMs: Date.now() - start,
+          modelName: conn.model,
+        };
       } else {
         testUrl = `${baseUrl}${provider?.modelsEndpoint || "/models"}`;
       }
@@ -572,6 +580,7 @@ export async function connectionsRoutes(app: FastifyInstance) {
       const result = await generateImage(imgSource, baseUrl, imgApiKey, imgServiceHint, {
         prompt: BASE_PROMPT,
         model: imgModel || undefined,
+        imageEndpointId: (conn.imageEndpointId as string | undefined) ?? undefined,
         width: 512,
         height: 512,
         comfyWorkflow: conn.comfyuiWorkflow || undefined,

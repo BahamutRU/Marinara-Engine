@@ -50,6 +50,8 @@ export const apiConnections = sqliteTable("api_connections", {
   comfyuiWorkflow: text("comfyui_workflow"),
   /** Image generation: explicitly selected service ID (e.g. "comfyui", "automatic1111"). Overrides URL inference. */
   imageService: text("image_service"),
+  /** For endpoint-based image services (e.g. RunPod Serverless ComfyUI): the endpoint ID. */
+  imageEndpointId: text("image_endpoint_id"),
   /** Default generation parameters (stored as JSON) for new chats using this connection */
   defaultParameters: text("default_parameters"),
   /** Optional prompt preset override for roleplay/visual-novel chats using this connection */

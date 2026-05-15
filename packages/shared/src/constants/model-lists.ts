@@ -485,6 +485,13 @@ export const IMAGE_GENERATION_SOURCES: ImageGenSource[] = [
     requiresApiKey: false,
   },
   {
+    id: "runpod_comfyui",
+    name: "RunPod Serverless (ComfyUI)",
+    description: "RunPod serverless endpoint running a ComfyUI workflow for text-to-image generation.",
+    defaultBaseUrl: "https://api.runpod.ai/v2",
+    requiresApiKey: true,
+  },
+  {
     id: "drawthings",
     name: "Draw Things",
     description: "macOS / iOS local image generation via Draw Things.",
@@ -576,6 +583,7 @@ export function inferImageSource(model: string, baseUrl: string): string {
     m === "xai" ||
     m === "comfyui" ||
     m === "automatic1111" ||
+    m === "runpod_comfyui" ||
     m === "gemini_image"
   ) {
     return m;
@@ -594,6 +602,7 @@ export function inferImageSource(model: string, baseUrl: string): string {
   if (u.includes("stablehorde.net")) return "horde";
   if (u.includes("blockentropy")) return "blockentropy";
   if (u.includes(":8188") || u.includes("comfyui")) return "comfyui";
+  if (u.includes("runpod.ai")) return "runpod_comfyui";
   if (u.includes(":7860") && !u.includes("drawthings")) return "automatic1111";
   // Gemini image models generate via chat completions (native or proxy)
   if (m.includes("gemini") && m.includes("image")) return "gemini_image";
