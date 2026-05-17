@@ -1054,7 +1054,7 @@ export function GameNarration({
       if (c.avatarUrl) setAvatarInfo(c.name, { url: c.avatarUrl, crop: c.avatarCrop });
     }
     if (personaInfo?.name && personaInfo.avatarUrl) {
-      setAvatarInfo(personaInfo.name, { url: personaInfo.avatarUrl });
+      setAvatarInfo(personaInfo.name, { url: personaInfo.avatarUrl, crop: personaInfo.avatarCrop });
     }
     if (speakerAvatarMap) {
       for (const [name, avatarInfo] of speakerAvatarMap) {

@@ -5605,6 +5605,7 @@ export function GameSurface({
           id: personaId,
           name: personaInfo.name,
           avatarUrl: personaInfo.avatarUrl ?? null,
+          avatarCrop: personaInfo.avatarCrop ?? null,
           nameColor: personaInfo.nameColor,
           dialogueColor: personaInfo.dialogueColor,
           canRemove: false,
@@ -6277,6 +6278,7 @@ export function GameSurface({
         title: personaInfo.name,
         subtitle: "Player Character",
         avatarUrl: personaInfo.avatarUrl ?? null,
+        avatarCrop: personaInfo.avatarCrop ?? null,
         level: sessionNumber,
         status: gameSnapshot?.playerStats?.status || undefined,
         stats: [
