@@ -2,6 +2,7 @@
 // Routes: Chats
 // ──────────────────────────────────────────────
 import type { FastifyInstance } from "fastify";
+import AdmZip from "adm-zip";
 import { logger } from "../lib/logger.js";
 import {
   LOCAL_SIDECAR_CONNECTION_ID,
@@ -1562,22 +1563,52 @@ export async function chatsRoutes(app: FastifyInstance) {
 
   // ── Export ──
 
-  // Export chat — supports JSONL (default, SillyTavern-compatible) and plain text
-  app.get<{ Params: { id: string }; Querystring: { format?: string } }>("/:id/export", async (req, reply) => {
-    const chat = await storage.getById(req.params.id);
-    if (!chat) return reply.status(404).send({ error: "Chat not found" });
+  type ExportFormat = "jsonl" | "text";
+  type ChatRow = NonNullable<Awaited<ReturnType<typeof storage.getById>>>;
 
-    const msgs = await storage.listMessages(req.params.id);
-    const format = (req.query.format ?? "jsonl").toLowerCase();
+  const normalizeExportFormat = (value: unknown): ExportFormat =>
+    typeof value === "string" && value.toLowerCase() === "text" ? "text" : "jsonl";
 
-    // Parse characterIds to resolve character names
-    const charIds: string[] = (() => {
-      try {
-        return JSON.parse(chat.characterIds as string);
-      } catch {
-        return [];
-      }
-    })();
+  const parseExportCharacterIds = (raw: unknown): string[] => {
+    if (Array.isArray(raw)) return raw.filter((id): id is string => typeof id === "string");
+    if (typeof raw !== "string") return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const parseExportMetadata = (raw: unknown): Record<string, unknown> => {
+    if (!raw) return {};
+    if (typeof raw === "object") return raw as Record<string, unknown>;
+    if (typeof raw !== "string") return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const safeExportNamePart = (value: unknown, fallback: string): string => {
+    const source = typeof value === "string" && value.trim() ? value.trim() : fallback;
+    return (
+      source
+        .normalize("NFKD")
+        .replace(/[^\w .-]+/g, "_")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80) || fallback
+    );
+  };
+
+  const serializeChatTranscript = async (chat: ChatRow, format: ExportFormat) => {
+    const msgs = await storage.listMessages(chat.id);
+    const charIds = parseExportCharacterIds(chat.characterIds);
+    const metadata = parseExportMetadata(chat.metadata);
+    const branchName = typeof metadata.branchName === "string" ? metadata.branchName : "";
 
     // Build a characterId → name map for all characters in this chat
     const charNameMap = new Map<string, string>();
@@ -1594,7 +1625,6 @@ export async function chatsRoutes(app: FastifyInstance) {
     }
     const primaryCharName = (charIds[0] && charNameMap.get(charIds[0])) ?? chat.name;
 
-    // Resolve display name for a message
     const getDisplayName = (msg: { role: string; characterId?: string | null }) => {
       if (msg.role === "user") return "User";
       if (msg.role === "system") return "System";
@@ -1603,7 +1633,6 @@ export async function chatsRoutes(app: FastifyInstance) {
       return primaryCharName;
     };
 
-    // ── Plain text format ──
     if (format === "text") {
       const header = `Chat: ${chat.name}\nDate: ${chat.createdAt}\n${"─".repeat(50)}\n`;
       const body = msgs
@@ -1614,23 +1643,23 @@ export async function chatsRoutes(app: FastifyInstance) {
         })
         .join("\n\n");
 
-      return reply
-        .header("Content-Type", "text/plain; charset=utf-8")
-        .header("Content-Disposition", `attachment; filename="${encodeURIComponent(chat.name)}.txt"`)
-        .send(header + body);
+      return {
+        content: header + body,
+        extension: "txt",
+        contentType: "text/plain; charset=utf-8",
+        messageCount: msgs.length,
+        branchName,
+      };
     }
 
-    // ── JSONL format (default) ──
-    const lines: string[] = [];
-
-    lines.push(
+    const lines: string[] = [
       JSON.stringify({
         user_name: "User",
         character_name: primaryCharName,
         create_date: chat.createdAt,
         chat_metadata: {},
       }),
-    );
+    ];
 
     for (const msg of msgs) {
       lines.push(
@@ -1644,10 +1673,113 @@ export async function chatsRoutes(app: FastifyInstance) {
       );
     }
 
+    return {
+      content: lines.join("\n"),
+      extension: "jsonl",
+      contentType: "application/jsonl",
+      messageCount: msgs.length,
+      branchName,
+    };
+  };
+
+  const buildBulkExportFilename = (
+    chat: ChatRow,
+    index: number,
+    total: number,
+    branchName: string,
+    extension: string,
+  ) => {
+    const padWidth = Math.max(2, String(total).length);
+    const ordinal = String(index + 1).padStart(padWidth, "0");
+    const name = safeExportNamePart(chat.name, "chat");
+    const branch = branchName ? `__${safeExportNamePart(branchName, "branch")}` : "";
+    const group = chat.groupId ? `__group-${String(chat.groupId).slice(0, 8)}` : "";
+    return `${ordinal}__${name}${branch}${group}__${chat.id.slice(0, 8)}.${extension}`;
+  };
+
+  app.post<{
+    Body: { chatIds?: string[]; format?: string; scope?: "selected" | "all" };
+  }>("/export/bulk", async (req, reply) => {
+    const format = normalizeExportFormat(req.body?.format);
+    const scope = req.body?.scope === "all" ? "all" : "selected";
+    const uniqueIds = [...new Set((req.body?.chatIds ?? []).filter((id): id is string => typeof id === "string"))];
+
+    let chatsToExport: ChatRow[];
+    if (scope === "all") {
+      chatsToExport = (await storage.list()) as ChatRow[];
+    } else {
+      if (uniqueIds.length === 0) return reply.status(400).send({ error: "No chats selected for export" });
+      const rows = await Promise.all(uniqueIds.map((id) => storage.getById(id)));
+      chatsToExport = rows.filter((chat): chat is ChatRow => Boolean(chat));
+    }
+
+    if (chatsToExport.length === 0) return reply.status(404).send({ error: "No chats found to export" });
+
+    const zip = new AdmZip();
+    const manifest: Array<Record<string, unknown>> = [];
+
+    for (let index = 0; index < chatsToExport.length; index++) {
+      const chat = chatsToExport[index]!;
+      const serialized = await serializeChatTranscript(chat, format);
+      const file = buildBulkExportFilename(
+        chat,
+        index,
+        chatsToExport.length,
+        serialized.branchName,
+        serialized.extension,
+      );
+      zip.addFile(file, Buffer.from(serialized.content, "utf8"));
+      manifest.push({
+        file,
+        id: chat.id,
+        name: chat.name,
+        mode: chat.mode,
+        groupId: chat.groupId,
+        folderId: chat.folderId,
+        branchName: serialized.branchName || null,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt,
+        messageCount: serialized.messageCount,
+      });
+    }
+
+    zip.addFile(
+      "manifest.json",
+      Buffer.from(
+        JSON.stringify(
+          {
+            exportedAt: new Date().toISOString(),
+            format,
+            scope,
+            count: chatsToExport.length,
+            chats: manifest,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      ),
+    );
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     return reply
-      .header("Content-Type", "application/jsonl")
-      .header("Content-Disposition", `attachment; filename="${encodeURIComponent(chat.name)}.jsonl"`)
-      .send(lines.join("\n"));
+      .header("Content-Type", "application/zip")
+      .header("Content-Disposition", `attachment; filename="chat-transcripts-${format}-${stamp}.zip"`)
+      .send(zip.toBuffer());
+  });
+
+  // Export chat — supports JSONL (default, SillyTavern-compatible) and plain text
+  app.get<{ Params: { id: string }; Querystring: { format?: string } }>("/:id/export", async (req, reply) => {
+    const chat = await storage.getById(req.params.id);
+    if (!chat) return reply.status(404).send({ error: "Chat not found" });
+
+    const format = normalizeExportFormat(req.query.format);
+    const serialized = await serializeChatTranscript(chat as ChatRow, format);
+
+    return reply
+      .header("Content-Type", serialized.contentType)
+      .header("Content-Disposition", `attachment; filename="${encodeURIComponent(chat.name)}.${serialized.extension}"`)
+      .send(serialized.content);
   });
 
   // ── Branch (duplicate) ──

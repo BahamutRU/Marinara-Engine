@@ -747,6 +747,21 @@ export function useExportChat() {
   });
 }
 
+/** Export selected or all chats as a zip of JSONL/text transcripts */
+export function useBulkExportChats() {
+  return useMutation({
+    mutationFn: ({
+      chatIds,
+      format = "jsonl",
+      scope = "selected",
+    }: {
+      chatIds?: string[];
+      format?: "jsonl" | "text";
+      scope?: "selected" | "all";
+    }) => api.downloadPost("/chats/export/bulk", { chatIds, format, scope }, `chat-transcripts-${format}.zip`),
+  });
+}
+
 /** Create a branch (copy) of an existing chat */
 export function useBranchChat() {
   const qc = useQueryClient();

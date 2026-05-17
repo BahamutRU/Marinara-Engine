@@ -160,7 +160,7 @@ OpenAI, Anthropic, Google Gemini, Google Vertex AI, OpenRouter, NanoGPT, Mistral
 
 ### Export & Data
 
-Export chats as JSONL or plain text. Fully local file-native storage — all data stays on your machine. No account required.
+Export individual chats or bulk transcript zips as JSONL or plain text. Fully local file-native storage — all data stays on your machine. No account required.
 
 ---
 
