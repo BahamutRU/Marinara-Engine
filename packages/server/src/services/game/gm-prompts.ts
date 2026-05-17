@@ -792,9 +792,14 @@ export function buildGmFormatReminder(
         `- If the scene moves to a new visually important location and no existing background tag fits, use [bg: backgrounds:generated:<short-location-slug>].`,
       );
       if (ctx.artStylePrompt?.trim()) {
-        lines.push(
-          `- Generated scene images must follow this visual instruction: ${normalizePromptText(ctx.artStylePrompt)}.`,
-        );
+        const safeArtStylePrompt = normalizePromptText(ctx.artStylePrompt)
+          .replace(/[\r\n\t]+/g, " ")
+          .replace(/[<>{}[\]]/g, "")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+        if (safeArtStylePrompt) {
+          lines.push(`- Generated scene images must follow this visual instruction: ${safeArtStylePrompt}.`);
+        }
       }
     }
   }
