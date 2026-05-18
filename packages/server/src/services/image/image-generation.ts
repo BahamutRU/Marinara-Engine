@@ -325,6 +325,24 @@ function imageExtensionFromMimeType(mimeType: string): string {
   return "png";
 }
 
+function imageResultMetadata(filename: string, contentType: string | null, base64: string): Pick<ImageGenResult, "mimeType" | "ext"> {
+  const normalizedContentType = contentType?.toLowerCase() ?? "";
+  const normalizedFilename = filename.toLowerCase();
+
+  if (normalizedContentType.includes("jpeg") || normalizedContentType.includes("jpg") || /\.jpe?g(?:$|[?#])/i.test(normalizedFilename)) {
+    return { mimeType: "image/jpeg", ext: "jpg" };
+  }
+  if (normalizedContentType.includes("webp") || /\.webp(?:$|[?#])/i.test(normalizedFilename)) {
+    return { mimeType: "image/webp", ext: "webp" };
+  }
+  if (normalizedContentType.includes("gif") || /\.gif(?:$|[?#])/i.test(normalizedFilename)) {
+    return { mimeType: "image/gif", ext: "gif" };
+  }
+
+  const detectedMimeType = detectImageMimeType(base64);
+  return { mimeType: detectedMimeType, ext: imageExtensionFromMimeType(detectedMimeType) };
+}
+
 function decodeImageDataUrl(imageUrl: string): ImageGenResult {
   const match = imageUrl.trim().match(/^data:(image\/(?:png|jpe?g|webp|gif));base64,([\s\S]+)$/i);
   if (!match) {
@@ -1557,6 +1575,18 @@ const DEFAULT_COMFYUI_WORKFLOW: Record<string, unknown> = {
 };
 
 const COMFYUI_GEN_TIMEOUT_SECONDS = Number(process.env.COMFYUI_GEN_TIMEOUT ?? 300);
+const COMFYUI_OUTPUT_FILE_KEYS = ["gifs", "images"] as const;
+
+interface ComfyUiOutputFile {
+  filename: string;
+  subfolder?: string;
+  type?: string;
+}
+
+interface ComfyUiNodeOutput {
+  images?: ComfyUiOutputFile[];
+  gifs?: ComfyUiOutputFile[];
+}
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 2 ** 32);
@@ -1721,39 +1751,35 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest): Promi
     });
     if (!historyResp.ok) continue;
 
-    const history = (await historyResp.json()) as Record<
-      string,
-      {
-        outputs?: Record<string, { images?: Array<{ filename: string; subfolder: string; type: string }> }>;
-      }
-    >;
+    const history = (await historyResp.json()) as Record<string, { outputs?: Record<string, ComfyUiNodeOutput> }>;
 
     const entry = history[prompt_id];
     if (!entry?.outputs) continue;
 
-    // Find the first output with images
-    for (const nodeOutput of Object.values(entry.outputs)) {
-      const images = nodeOutput.images;
-      if (images && images.length > 0) {
-        const img = images[0]!;
-        const params = new URLSearchParams({
-          filename: img.filename,
-          subfolder: img.subfolder || "",
-          type: img.type || "output",
-        });
+    // Video Helper Suite's Video Combine reports animated WebP files as "gifs".
+    for (const outputKey of COMFYUI_OUTPUT_FILE_KEYS) {
+      for (const nodeOutput of Object.values(entry.outputs)) {
+        const outputFiles = nodeOutput[outputKey];
+        if (outputFiles && outputFiles.length > 0) {
+          const img = outputFiles[0]!;
+          const params = new URLSearchParams({
+            filename: img.filename,
+            subfolder: img.subfolder || "",
+            type: img.type || "output",
+          });
 
-        const imgResp = await localImageBackendFetch(`${base}/view?${params}`, {
-          signal: AbortSignal.timeout(IMAGE_GEN_TIMEOUT),
-        });
-        if (!imgResp.ok) {
-          throw new Error(`ComfyUI image fetch failed (${imgResp.status})`);
+          const imgResp = await localImageBackendFetch(`${base}/view?${params}`, {
+            signal: AbortSignal.timeout(IMAGE_GEN_TIMEOUT),
+          });
+          if (!imgResp.ok) {
+            throw new Error(`ComfyUI image fetch failed (${imgResp.status})`);
+          }
+
+          const arrayBuffer = await imgResp.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString("base64");
+          const { mimeType, ext } = imageResultMetadata(img.filename, imgResp.headers.get("content-type"), base64);
+          return { base64, mimeType, ext };
         }
-
-        const arrayBuffer = await imgResp.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString("base64");
-        const ext = img.filename.endsWith(".jpg") || img.filename.endsWith(".jpeg") ? "jpg" : "png";
-        const mimeType = ext === "jpg" ? "image/jpeg" : "image/png";
-        return { base64, mimeType, ext };
       }
     }
   }
