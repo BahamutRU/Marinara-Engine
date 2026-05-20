@@ -159,6 +159,7 @@ import {
   preserveTrackerCharacterUiFields,
   resolveActiveCharacterIds,
   resolveBaseUrl,
+  resolvePromptCharacterIdsForTarget,
   resolveRegenerationGameStateFallbackMessageIds,
   resolveRegenerationGameStateAnchor,
   resolveUserRegenerationPersistentAttachments,
@@ -919,7 +920,7 @@ export async function generateRoutes(app: FastifyInstance) {
       if (regenCandidate?.chatId === input.chatId) {
         const replay = normalizeGenerationReplay(parseExtra(regenCandidate.extra).generationReplay);
         applyGenerationReplayToRegenerateInput(input, replay);
-        if (!input.forCharacterId && earlyMeta.groupResponseOrder === "manual" && regenCandidate.characterId) {
+        if (!input.forCharacterId && regenCandidate.characterId) {
           input.forCharacterId = regenCandidate.characterId;
         }
       }
@@ -1440,13 +1441,11 @@ export async function generateRoutes(app: FastifyInstance) {
               ? "individual"
               : "merged"
             : ((chatMeta.groupChatMode as string) ?? "merged");
-        const manualPromptTargetCharId =
-          promptGroupResponseOrder === "manual" &&
-          typeof input.forCharacterId === "string" &&
-          characterIds.includes(input.forCharacterId)
+        const promptTargetCharacterId =
+          typeof input.forCharacterId === "string" && characterIds.includes(input.forCharacterId)
             ? input.forCharacterId
             : null;
-        const promptCharacterIds = manualPromptTargetCharId ? [manualPromptTargetCharId] : characterIds;
+        const promptCharacterIds = resolvePromptCharacterIdsForTarget(characterIds, promptTargetCharacterId);
         const deferCharacterMacros =
           characterIds.length > 1 &&
           promptGroupChatMode === "individual" &&
@@ -3501,8 +3500,8 @@ export async function generateRoutes(app: FastifyInstance) {
         // in the <party> section, so skip fallback injection to avoid duplication.
         if (shouldInjectIdentityFallback({ chatMode, presetId })) {
           const allContent = finalMessages.map((m) => m.content).join("\n");
-          const fallbackCharInfo = manualPromptTargetCharId
-            ? charInfo.filter((c) => c.id === manualPromptTargetCharId)
+          const fallbackCharInfo = promptTargetCharacterId
+            ? charInfo.filter((c) => c.id === promptTargetCharacterId)
             : charInfo;
           for (const ci of fallbackCharInfo) {
             // Check if this character already appears by description snippet, XML tag, or markdown heading

@@ -42,6 +42,7 @@ import {
   parseExtra,
   parseStoredGenerationParameters,
   resolveActiveCharacterIds,
+  resolvePromptCharacterIdsForTarget,
   resolveRegenerationGameStateAnchor,
   resolveVisibleGameStateAnchor,
   resolveBaseUrl,
@@ -727,6 +728,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       mode: chatMode,
       allowEmpty: true,
     });
+    const promptCharacterIds = resolvePromptCharacterIdsForTarget(
+      characterIds,
+      typeof body.forCharacterId === "string" ? body.forCharacterId : null,
+    );
 
     // Persona resolution (same strategy as generation; read-only)
     let personaId: string | null = null;
@@ -824,7 +829,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       requestChoices ?? (isDifferentPresetOverride ? (presetDefaultChoices ?? {}) : chatChoicesFromMeta);
     const promptMacroContext = await buildPromptMacroContext({
       db: app.db,
-      characterIds,
+      characterIds: promptCharacterIds,
       personaName,
       personaDescription,
       personaFields,
@@ -957,8 +962,8 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       })();
 
       const characterBlocks: string[] = [];
-      if (includeCharacters && characterIds.length > 0) {
-        const charRows = await Promise.all(characterIds.map((id) => chars.getById(id)));
+      if (includeCharacters && promptCharacterIds.length > 0) {
+        const charRows = await Promise.all(promptCharacterIds.map((id) => chars.getById(id)));
         for (const row of charRows) {
           if (!row?.data) continue;
           try {
@@ -1027,7 +1032,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
             }));
             const lorebookResult = await processLorebooks(app.db, scanMessages, null, {
               chatId,
-              characterIds,
+              characterIds: promptCharacterIds,
               personaId,
               activeLorebookIds,
               excludedLorebookIds: lorebookScopeExclusions.excludedLorebookIds,
@@ -1203,7 +1208,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         choiceBlocks: choiceBlocks as any,
         chatChoices,
         chatId,
-        characterIds,
+        characterIds: promptCharacterIds,
         personaId,
         personaName,
         personaDescription,
@@ -1320,7 +1325,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       }));
       const lorebookResult = await processLorebooks(app.db, scanMessages, null, {
         chatId,
-        characterIds,
+        characterIds: promptCharacterIds,
         personaId,
         activeLorebookIds,
         excludedLorebookIds: lorebookScopeExclusions.excludedLorebookIds,
@@ -1362,7 +1367,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     }
 
     if (usePromptParts || !effectivePresetId) {
-      const characterDepthEntries = await collectCharacterDepthPromptEntries(app.db, characterIds, promptMacroContext);
+      const characterDepthEntries = await collectCharacterDepthPromptEntries(app.db, promptCharacterIds, promptMacroContext);
       if (characterDepthEntries.length > 0) {
         finalMessages = injectAtDepth(finalMessages as any, characterDepthEntries) as any;
       }

@@ -214,6 +214,16 @@ export function resolveActiveCharacterIds(
   return characterIds;
 }
 
+export function resolvePromptCharacterIdsForTarget(
+  characterIds: string[],
+  targetCharacterId: string | null | undefined,
+): string[] {
+  if (typeof targetCharacterId === "string" && characterIds.includes(targetCharacterId)) {
+    return [targetCharacterId];
+  }
+  return characterIds;
+}
+
 export function shouldPreferLatestVisibleGameState(input: {
   attachments?: unknown[] | null;
   impersonate?: boolean;
