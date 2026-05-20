@@ -451,8 +451,9 @@ async function expandAgentData(config: MarkerConfig, ctx: MarkerContext): Promis
   ]);
   if (AUTO_INJECTED_TRACKERS.has(agentType)) return { content: "" };
 
-  // Per-chat active agent filter: if a per-chat list is set, only include agents in that list
-  if (ctx.activeAgentIds.length > 0 && !ctx.activeAgentIds.includes(agentType)) {
+  // Generation only runs agents explicitly added to the chat. If none are active,
+  // prompt sections must not keep replaying the last saved output forever.
+  if (ctx.activeAgentIds.length === 0 || !ctx.activeAgentIds.includes(agentType)) {
     return { content: "" };
   }
 

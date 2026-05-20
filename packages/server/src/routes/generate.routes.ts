@@ -710,6 +710,54 @@ function toRuntimeAgentSectionType(
   return eligibleAgentTypes.has(agentType) ? agentType : null;
 }
 
+function parseRuntimeAgentSettings(settings: unknown): Record<string, unknown> {
+  if (!settings) return {};
+  if (typeof settings === "string") {
+    try {
+      const parsed = JSON.parse(settings) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof settings === "object" && !Array.isArray(settings) ? (settings as Record<string, unknown>) : {};
+}
+
+export function buildRuntimeAgentSectionEligibleTypesForTest(input: {
+  enableAgents: boolean;
+  activeAgentIds: string[];
+  configuredAgents?: Array<{ type: string; phase: string; settings?: unknown }>;
+}): Set<RuntimeAgentSectionType> {
+  const eligible = new Set<RuntimeAgentSectionType>();
+  if (!input.enableAgents || input.activeAgentIds.length === 0) return eligible;
+
+  const activeAgentIds = new Set(input.activeAgentIds);
+
+  for (const agent of BUILT_IN_AGENTS) {
+    if (!activeAgentIds.has(agent.id)) continue;
+    if (agent.phase !== "pre_generation" || agent.id === "html") continue;
+    if (
+      resolveAgentResultType({ type: agent.id, settings: getDefaultBuiltInAgentSettings(agent.id) }) !==
+      "context_injection"
+    ) {
+      continue;
+    }
+    eligible.add(agent.id);
+  }
+
+  for (const agent of input.configuredAgents ?? []) {
+    if (!activeAgentIds.has(agent.type)) continue;
+    if (agent.phase !== "pre_generation" || agent.type === "html") continue;
+    const settings = parseRuntimeAgentSettings(agent.settings);
+    if (resolveAgentResultType({ type: agent.type, settings }) !== "context_injection") continue;
+    eligible.add(agent.type);
+  }
+
+  return eligible;
+}
+
 function makeRuntimeAgentSectionTokens(agentType: RuntimeAgentSectionType, nonce: string): RuntimeAgentSectionTokens {
   return {
     placeholder: `${RUNTIME_AGENT_SECTION_TOKEN_PREFIX}${nonce}__${agentType}__VALUE__`,
@@ -1406,16 +1454,18 @@ export async function generateRoutes(app: FastifyInstance) {
         const chatActiveAgentIds: string[] = filterGameInternalAgentIds(chatMode, persistedChatActiveAgentIds).filter(
           (agentId) => !(gameSpotifyMusicEnabled && agentId === "spotify"),
         );
-        const runtimeSectionEligibleAgentTypes = new Set(
-          BUILT_IN_AGENTS.filter(
-            (agent) =>
-              chatActiveAgentIds.includes(agent.id) &&
-              agent.phase === "pre_generation" &&
-              agent.id !== "html" &&
-              resolveAgentResultType({ type: agent.id, settings: getDefaultBuiltInAgentSettings(agent.id) }) ===
-                "context_injection",
-          ).map((agent) => agent.id),
-        );
+        const hasPerChatAgentList = chatActiveAgentIds.length > 0;
+        const perChatAgentSet = new Set(chatActiveAgentIds);
+        const configuredPromptAgents = chatEnableAgents && hasPerChatAgentList ? await agentsStore.list() : [];
+        const runtimeSectionEligibleAgentTypes = buildRuntimeAgentSectionEligibleTypesForTest({
+          enableAgents: chatEnableAgents,
+          activeAgentIds: chatActiveAgentIds,
+          configuredAgents: configuredPromptAgents.map((agent) => ({
+            type: agent.type,
+            phase: agent.phase,
+            settings: agent.settings,
+          })),
+        });
         const chatActiveLorebookIds: string[] = Array.isArray(chatMeta.activeLorebookIds)
           ? (chatMeta.activeLorebookIds as string[])
           : [];
@@ -3073,12 +3123,9 @@ export async function generateRoutes(app: FastifyInstance) {
         // ────────────────────────────────────────
         // Agent Pipeline: resolve enabled agents
         // ────────────────────────────────────────
-        const hasPerChatAgentList = chatActiveAgentIds.length > 0;
-        const perChatAgentSet = new Set(chatActiveAgentIds);
-
         // Only run agents that are explicitly added to the chat.
         // Empty activeAgentIds = no agents (not "all globally-enabled").
-        const enabledConfigs = chatEnableAgents && hasPerChatAgentList ? await agentsStore.list() : [];
+        const enabledConfigs = configuredPromptAgents;
 
         // Build ResolvedAgent array — each agent gets its own provider/model or falls back to chat connection
         const resolvedAgents: ResolvedAgent[] = [];
