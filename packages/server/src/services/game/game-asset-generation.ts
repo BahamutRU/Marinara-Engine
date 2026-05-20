@@ -189,10 +189,15 @@ export function readAvatarBase64(avatarPath: string | null | undefined): string 
 
 /** Sanitise a name into a safe filesystem slug. */
 function safeName(name: string): string {
-  return name
+  const trimmed = name.trim();
+  const slug = trimmed
     .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+  if (slug || !trimmed) return slug;
+  return `asset-${createHash("sha256").update(trimmed).digest("hex").slice(0, 8)}`;
 }
 
 function truncateSlugByBytes(slug: string, maxBytes: number): string {
