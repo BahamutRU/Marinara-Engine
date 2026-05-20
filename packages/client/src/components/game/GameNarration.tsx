@@ -3642,7 +3642,10 @@ export function GameNarration({
 
           {/* Side remarks — small floating box shown with the dialogue they follow */}
           {activeSideLines.length > 0 && doneTyping && (
-            <div className="relative z-20 mb-2 flex max-h-[min(16rem,38vh)] w-full flex-col space-y-1.5 overflow-x-hidden overflow-y-auto pr-1">
+            <div
+              data-game-skip-bg-nav="true"
+              className="relative z-20 mb-2 flex max-h-[min(16rem,38vh)] w-full flex-col space-y-1.5 overflow-x-hidden overflow-y-auto pr-1"
+            >
               {activeSideLines.map((line, i) => {
                 const expressionAvatar =
                   line.type === "side" || line.type === "extra"
@@ -3744,7 +3747,10 @@ export function GameNarration({
           {diceResultSlot}
         </div>
 
-        <div className="shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--card)]/90 p-3 shadow-[0_16px_38px_rgba(0,0,0,0.45)] backdrop-blur-md dark:border-white/15 dark:bg-black/50">
+        <div
+          data-game-skip-bg-nav="true"
+          className="shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--card)]/90 p-3 shadow-[0_16px_38px_rgba(0,0,0,0.45)] backdrop-blur-md dark:border-white/15 dark:bg-black/50"
+        >
           {/* Scene preparation gate: wait for effects before showing narration */}
           {scenePreparing && (
             <div className="flex items-center gap-2 py-3">

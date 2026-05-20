@@ -5528,6 +5528,7 @@ export function GameSurface({
 
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY === 0) return;
+      if (event.ctrlKey) return;
       if (inSkipUi(event.target)) return;
       const now = Date.now();
       // Throttle ~60ms so a single physical scroll-tick doesn't fire many times on touchpads.
